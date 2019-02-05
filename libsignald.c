@@ -33,13 +33,12 @@
 #      define N_(a) (a)
 #endif
 
-//#include "glib_compat.h"
 #include "json_compat.h"
 #include "purple_compat.h"
 
 #define SIGNALD_PLUGIN_ID "prpl-hehoe-signald"
 #ifndef SIGNALD_PLUGIN_VERSION
-#define SIGNALD_PLUGIN_VERSION "0.1"
+#define SIGNALD_PLUGIN_VERSION "0.2.0"
 #endif
 #define SIGNALD_PLUGIN_WEBSITE "https://github.com/hoehermann/libpurple-signald"
 
