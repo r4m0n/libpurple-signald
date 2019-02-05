@@ -110,12 +110,12 @@ signald_process_message(SignaldAccount *sa,
         // look for existing group chat conversation
         PurpleChatConversation *chatconv = purple_conversations_find_chat_with_account(groupid_str, sa->account);
         if (chatconv == NULL) {
-            // not yet known, create new
+            // group chat conversation not yet known, create new
             chatconv = purple_serv_got_joined_chat(sa->pc, signald_chat_hash(groupid_str), groupid_str);
-            // TODO: query groups, find this one, add participants
+            // TODO: query groups, find this one, add participants OR populate list of participants when handling receipts
         }
-        // set friendly name
-        purple_chat_conversation_set_nick(chatconv, groupname); // TODO: make this work
+        // set window title to friendly name
+        purple_conversation_set_title(purple_conv_chat_get_conversation(chatconv), groupname); // TODO: make this work
         // actually display the message
         purple_serv_got_chat_in(sa->pc, signald_chat_hash(groupid_str), username, flags, content, timestamp);
     } else {
@@ -323,22 +323,16 @@ signald_status_types(PurpleAccount *account)
 }
 
 static int
-signald_send_im(PurpleConnection *pc,
-#if PURPLE_VERSION_CHECK(3, 0, 0)
-                PurpleMessage *msg)
+signald_send_message(SignaldAccount *sa,
+                     const gchar *recipient, const gchar *message,
+                     gboolean group
+                     )
 {
-    const gchar *who = purple_message_get_recipient(msg);
-    const gchar *message = purple_message_get_contents(msg);
-#else
-                const gchar *who, const gchar *message, PurpleMessageFlags flags)
-{
-#endif
-    SignaldAccount *sa = purple_connection_get_protocol_data(pc);
     // build json
     JsonObject *data = json_object_new();
     json_object_set_string_member(data, "type", "send");
     json_object_set_string_member(data, "username", purple_account_get_username(sa->account));
-    json_object_set_string_member(data, "recipientNumber", who);
+    json_object_set_string_member(data, group ? "recipientGroupId" :"recipientNumber", recipient);
     json_object_set_string_member(data, "messageBody", message);
     char *json = json_object_to_string(data);
     char *jsonn = append_newline(json);
@@ -354,6 +348,44 @@ signald_send_im(PurpleConnection *pc,
         return -errno;
     }
     return 1;
+}
+
+static int
+signald_send_im(PurpleConnection *pc,
+#if PURPLE_VERSION_CHECK(3, 0, 0)
+                PurpleMessage *msg)
+{
+    const gchar *who = purple_message_get_recipient(msg);
+    const gchar *message = purple_message_get_contents(msg);
+#else
+                const gchar *who, const gchar *message, PurpleMessageFlags flags)
+{
+#endif
+    SignaldAccount *sa = purple_connection_get_protocol_data(pc);
+    return signald_send_message(sa, who, message, FALSE);
+}
+
+static gint
+signald_chat_send(PurpleConnection *pc, gint id,
+#if PURPLE_VERSION_CHECK(3, 0, 0)
+                  PurpleMessage *msg)
+{
+    const gchar *message = purple_message_get_contents(msg);
+#else
+                  const gchar *message, PurpleMessageFlags flags)
+{
+#endif
+    SignaldAccount *sa = purple_connection_get_protocol_data(pc);
+    PurpleConversation *conv = purple_find_chat(sa->pc, id);
+    const char * name = purple_conversation_get_name(conv);
+    gint ret = signald_send_message(sa, name, message, TRUE);
+    if (ret > 0) {
+        // explicitly echo into own conversation
+        PurpleMessageFlags flags = PURPLE_MESSAGE_SEND;
+        const char * name = purple_account_get_username(sa->account);
+        purple_serv_got_chat_in(sa->pc, id, name, flags, message, time(NULL));
+    }
+    return ret;
 }
 
 static void
@@ -481,7 +513,9 @@ plugin_init(PurplePlugin *plugin)
 	prpl_info->get_chat_name = discord_get_chat_name;
 	prpl_info->find_blist_chat = discord_find_chat;
 	prpl_info->chat_invite = discord_chat_invite;
-	prpl_info->chat_send = discord_chat_send;
+    */
+    prpl_info->chat_send = signald_chat_send;
+    /*
 	prpl_info->set_chat_topic = discord_chat_set_topic;
 	prpl_info->get_cb_real_name = discord_get_real_name;
     */
