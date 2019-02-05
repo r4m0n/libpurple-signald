@@ -1,6 +1,6 @@
 /*
  *   signald plugin for libpurple
- *   Copyright (C) 2016 hermann Höhne
+ *   Copyright (C) 2019 Hermann Höhne
  *
  *   This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -80,13 +80,47 @@ signald_assume_all_buddies_online(SignaldAccount *sa)
     }
 }
 
+// from http://www.cse.yorku.ca/~oz/hash.html
+unsigned long
+djb2(const unsigned char *str)
+{
+    unsigned long hash = 5381;
+    int c = 0;
+    while ((c = *str++)) {
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+    return hash;
+}
+
+static gint
+signald_chat_hash(const gchar *str)
+{
+    unsigned long hash = djb2((unsigned char *)str);
+    return ABS((gint) hash);
+}
+
 void
 signald_process_message(SignaldAccount *sa,
-        const gchar *username, const gchar *content, const gchar *timestamp_str)
+        const gchar *username, const gchar *content, const gchar *timestamp_str,
+        const gchar *groupid_str, const gchar *groupname)
 {
     PurpleMessageFlags flags = PURPLE_MESSAGE_RECV;
     time_t timestamp = purple_str_to_time(timestamp_str, FALSE, NULL, NULL, NULL);
-    purple_serv_got_im(sa->pc, username, content, flags, timestamp);
+    if (groupid_str) {
+        // look for existing group chat conversation
+        PurpleChatConversation *chatconv = purple_conversations_find_chat_with_account(groupid_str, sa->account);
+        if (chatconv == NULL) {
+            // not yet known, create new
+            chatconv = purple_serv_got_joined_chat(sa->pc, signald_chat_hash(groupid_str), groupid_str);
+            // TODO: query groups, find this one, add participants
+        }
+        // set friendly name
+        purple_chat_conversation_set_nick(chatconv, groupname); // TODO: make this work
+        // actually display the message
+        purple_serv_got_chat_in(sa->pc, signald_chat_hash(groupid_str), username, flags, content, timestamp);
+    } else {
+        purple_serv_got_im(sa->pc, username, content, flags, timestamp);
+    }
 }
 
 void
@@ -126,7 +160,14 @@ signald_handle_input(SignaldAccount *sa, const char * json)
                 const gchar *timestamp_str = json_object_get_string_member(obj, "timestampISO"); // TODO: create time_t from integer timestamp as timestampISO probably means "time of delivery" instead of the time the message was sent
                 obj = json_object_get_object_member(obj, "dataMessage");
                 const gchar *message = json_object_get_string_member(obj, "message");
-                signald_process_message(sa, username, message, timestamp_str);
+                obj = json_object_get_object_member(obj, "groupInfo");
+                const gchar *groupid_str = NULL;
+                const gchar *groupname = NULL;
+                if (obj) {
+                    groupid_str = json_object_get_string_member(obj, "groupId");
+                    groupname = json_object_get_string_member(obj, "groupId");
+                }
+                signald_process_message(sa, username, message, timestamp_str, groupid_str, groupname);
             }
         } else {
             purple_debug_error("signald", "Ignored message of unknown type.\n");
