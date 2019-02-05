@@ -48,6 +48,8 @@
 #define SIGNALD_STATUS_STR_OFFLINE  "offline"
 #define SIGNALD_STATUS_STR_MOBILE   "mobile"
 
+#define SIGNALD_GROUPID_KEY "groupid"
+
 typedef struct {
     PurpleAccount *account;
     PurpleConnection *pc;
@@ -112,11 +114,23 @@ signald_process_message(SignaldAccount *sa,
     time_t timestamp = purple_str_to_time(timestamp_str, FALSE, NULL, NULL, NULL);
     if (groupid_str) {
         // look for existing group chat conversation
-        PurpleChatConversation *chatconv = purple_conversations_find_chat_with_account(groupid_str, sa->account);
+        const gchar *group_distinguisher = groupname; // alternatively: groupid_str – initializing with groupname rather than groupId is nicer to look at, but I have no idea what happens if the group is renamed (especially regarding logs)
+        PurpleChatConversation *chatconv = purple_conversations_find_chat_with_account(group_distinguisher, sa->account);
         if (chatconv == NULL) {
             // group chat conversation not yet known, create new
-            chatconv = purple_serv_got_joined_chat(sa->pc, signald_chat_hash(groupid_str), groupid_str);
+            chatconv = purple_serv_got_joined_chat(sa->pc, signald_chat_hash(groupid_str), group_distinguisher);
             // TODO: query groups, find this one, add participants OR populate list of participants when handling receipts
+            purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), SIGNALD_GROUPID_KEY, g_strdup(groupid_str));
+
+            // add chat to buddy list
+            /*
+            // this leads to segfaults in subsequent tries to find the chat in the buddy list (libnotify does so automatically)
+            // TODO: find out why, use correctly
+            GHashTable *components = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+            g_hash_table_replace(components, g_strdup(SIGNALD_GROUPID_KEY), g_strdup(groupid_str));
+            PurpleChat *chat = purple_chat_new(sa->account, groupname, components);
+            purple_blist_add_chat(chat, NULL, NULL);
+            */
         }
         // set window title to friendly name
         purple_conversation_set_title(purple_conv_chat_get_conversation(chatconv), groupname); // TODO: make this work
@@ -146,6 +160,7 @@ signald_handle_input(SignaldAccount *sa, const char * json)
         if (purple_strequal(type, "version")) {
             purple_debug_error("signald", "signald version ignored.\n");
         } else if (purple_strequal(type, "success")) {
+            // TODO: mark message as delayed (maybe do not echo) until success is reported
             purple_debug_error("signald", "Success noticed.\n");
         } else if (purple_strequal(type, "subscribed")) {
             purple_debug_error("signald", "Subscribed!\n");
@@ -169,7 +184,7 @@ signald_handle_input(SignaldAccount *sa, const char * json)
                 const gchar *groupname = NULL;
                 if (obj) {
                     groupid_str = json_object_get_string_member(obj, "groupId");
-                    groupname = json_object_get_string_member(obj, "groupId");
+                    groupname = json_object_get_string_member(obj, "name");
                 }
                 signald_process_message(sa, username, message, timestamp_str, groupid_str, groupname);
             }
@@ -327,16 +342,13 @@ signald_status_types(PurpleAccount *account)
 }
 
 static int
-signald_send_message(SignaldAccount *sa,
-                     const gchar *recipient, const gchar *message,
-                     gboolean group
-                     )
+signald_send_message(SignaldAccount *sa, const gchar *recipient, const gchar *message)
 {
     // build json
     JsonObject *data = json_object_new();
     json_object_set_string_member(data, "type", "send");
     json_object_set_string_member(data, "username", purple_account_get_username(sa->account));
-    json_object_set_string_member(data, group ? "recipientGroupId" :"recipientNumber", recipient);
+    json_object_set_string_member(data, recipient[0]=='+' ? "recipientNumber" : "recipientGroupId", recipient);
     json_object_set_string_member(data, "messageBody", message);
     char *json = json_object_to_string(data);
     char *jsonn = append_newline(json);
@@ -366,7 +378,7 @@ signald_send_im(PurpleConnection *pc,
 {
 #endif
     SignaldAccount *sa = purple_connection_get_protocol_data(pc);
-    return signald_send_message(sa, who, message, FALSE);
+    return signald_send_message(sa, who, message);
 }
 
 static gint
@@ -381,8 +393,8 @@ signald_chat_send(PurpleConnection *pc, gint id,
 #endif
     SignaldAccount *sa = purple_connection_get_protocol_data(pc);
     PurpleConversation *conv = purple_find_chat(sa->pc, id);
-    const char * name = purple_conversation_get_name(conv);
-    gint ret = signald_send_message(sa, name, message, TRUE);
+    const gchar * groupId_str = purple_conversation_get_data(conv, SIGNALD_GROUPID_KEY);
+    gint ret = signald_send_message(sa, groupId_str, message);
     if (ret > 0) {
         // explicitly echo into own conversation
         PurpleMessageFlags flags = PURPLE_MESSAGE_SEND;
