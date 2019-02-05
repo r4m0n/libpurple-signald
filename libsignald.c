@@ -91,11 +91,16 @@ djb2(const unsigned char *str)
     return hash;
 }
 
+/**
+ * libpurple requires unique chat id's per conversation.
+ * We hash the groupId string, optionally reducing to 32 bit,
+ * and hope to never observe a hash collision.
+ */
 static gint
 signald_chat_hash(const gchar *str)
 {
     unsigned long hash = djb2((unsigned char *)str);
-    return ABS((gint) hash);
+    return (gint) hash;
 }
 
 void
