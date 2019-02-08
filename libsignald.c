@@ -26,6 +26,8 @@
 #include <sys/socket.h> // for recv
 #include <sys/un.h> // for sockaddr_un
 
+// TODO: find out why this version leads to pidging hanging on exit via GUI
+
 #ifdef ENABLE_NLS
 // TODO: implement localisation
 #else
@@ -134,11 +136,23 @@ signald_process_message(SignaldAccount *sa,
         }
         // set window title to friendly name
         purple_conversation_set_title(purple_conv_chat_get_conversation(chatconv), groupname); // TODO: make this work
+        // TODO: test alternative purple_chat_conversation_set_nick(chatconv, groupname);
         // actually display the message
         purple_serv_got_chat_in(sa->pc, signald_chat_hash(groupid_str), username, flags, content, timestamp);
     } else {
         purple_serv_got_im(sa->pc, username, content, flags, timestamp);
     }
+}
+
+
+static void
+signald_join_chat(PurpleConnection *pc, GHashTable *chatdata)
+{
+    SignaldAccount *sa = purple_connection_get_protocol_data(pc);
+
+    gchar *groupid_str = g_hash_table_lookup(chatdata, SIGNALD_GROUPID_KEY);
+
+    // continue with group specific part of signald_process_message
 }
 
 void
@@ -173,6 +187,7 @@ signald_handle_input(SignaldAccount *sa, const char * json)
             gboolean isreceipt = json_object_get_boolean_member(obj, "isReceipt");
             if (isreceipt) {
                 // TODO: this could be displayed in the conversation window
+                // purple_conv_chat_write(to, username, msg, PURPLE_MESSAGE_SYSTEM | PURPLE_MESSAGE_NO_LOG, time(NULL));
                 purple_debug_error("signald", "Received reciept.\n");
             } else {
                 const gchar *username = json_object_get_string_member(obj, "source");
@@ -525,7 +540,10 @@ plugin_init(PurplePlugin *plugin)
     prpl_info->send_im = signald_send_im;
     /*
 	prpl_info->send_typing = discord_send_typing;
-	prpl_info->join_chat = discord_join_chat;
+    */
+    prpl_info->join_chat = signald_join_chat;
+    /*
+    // TODO: implement the next two – maybe adding group chats to buddy list will work then
 	prpl_info->get_chat_name = discord_get_chat_name;
 	prpl_info->find_blist_chat = discord_find_chat;
 	prpl_info->chat_invite = discord_chat_invite;
