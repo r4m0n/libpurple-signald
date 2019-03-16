@@ -38,7 +38,7 @@
 
 #define SIGNALD_PLUGIN_ID "prpl-hehoe-signald"
 #ifndef SIGNALD_PLUGIN_VERSION
-#define SIGNALD_PLUGIN_VERSION "0.2.0"
+#error Must set SIGNALD_PLUGIN_VERSION in Makefile
 #endif
 #define SIGNALD_PLUGIN_WEBSITE "https://github.com/hoehermann/libpurple-signald"
 
@@ -190,6 +190,7 @@ signald_handle_input(SignaldAccount *sa, const char * json)
             } else {
                 const gchar *username = json_object_get_string_member(obj, "source");
                 const gchar *timestamp_str = json_object_get_string_member(obj, "timestampISO"); // TODO: create time_t from integer timestamp as timestampISO probably means "time of delivery" instead of the time the message was sent
+                // NOTE: time_t is an integer timestamp, but which timezone?
                 obj = json_object_get_object_member(obj, "dataMessage");
                 const gchar *message = json_object_get_string_member(obj, "message");
                 obj = json_object_get_object_member(obj, "groupInfo");
@@ -267,7 +268,7 @@ signald_login(PurpleAccount *account)
 {
     PurpleConnection *pc = purple_account_get_connection(account);
 
-    // this protocoll does not support anything special right now
+    // this protocol does not support anything special right now
     PurpleConnectionFlags pc_flags;
     pc_flags = purple_connection_get_flags(pc);
     pc_flags |= PURPLE_CONNECTION_NO_IMAGES;
@@ -285,7 +286,7 @@ signald_login(PurpleAccount *account)
     // create a socket
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) {
-        purple_connection_set_state(pc, PURPLE_DISCONNECTED);
+        //purple_connection_set_state(pc, PURPLE_DISCONNECTED);
         purple_debug_info("signald", "socket() error is %s\n", strerror(errno));
         purple_connection_error(pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, _("Could not create to socket."));
         return;
@@ -298,7 +299,7 @@ signald_login(PurpleAccount *account)
     strcpy(address.sun_path, purple_account_get_string(account, "socket", SIGNALD_DEFAULT_SOCKET));
     if (connect(fd, (struct sockaddr *) &address, sizeof(struct sockaddr_un)) != 0)
     {
-        purple_connection_set_state(pc, PURPLE_DISCONNECTED);
+        //purple_connection_set_state(pc, PURPLE_DISCONNECTED);
         purple_debug_info("signald", "connect() error is %s\n", strerror(errno));
         purple_connection_error(pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, _("Could not connect to socket."));
         return;
@@ -318,7 +319,7 @@ signald_login(PurpleAccount *account)
     int w = write(fd, jsonn, l);
     g_free(jsonn);
     if (w != l) {
-        purple_connection_set_state(pc, PURPLE_DISCONNECTED);
+        //purple_connection_set_state(pc, PURPLE_DISCONNECTED);
         purple_debug_info("signald", "wrote %d, wanted %d, error is %s\n",w,l,strerror(errno));
         purple_connection_error(pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, _("Could not write subscribtion message."));
         return;
@@ -328,6 +329,8 @@ signald_login(PurpleAccount *account)
 static void
 signald_close(PurpleConnection *pc)
 {
+    // TODO: find out if this is needed here
+    //purple_connection_set_state(pc, PURPLE_DISCONNECTED);
     SignaldAccount *sa = purple_connection_get_protocol_data(pc);
     purple_input_remove(sa->watcher);
     sa->watcher = 0;
@@ -600,5 +603,5 @@ PURPLE_INIT_PLUGIN(signald, plugin_init, info);
 
 #else
 /* Purple 3 plugin load functions */
-#perror Purple 3 not supported.
+#error Purple 3 not supported.
 #endif
