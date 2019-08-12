@@ -48,5 +48,5 @@ gdb:
 	gdb --args pidgin -c ~/.fake_purple -n -m
 
 install: $(TARGET)
-  mkdir -m $(DIR_PERM) -p $(DEST)
-  install -m $(LIB_PERM) -p $(TARGET) $(DEST)
+	mkdir -m $(DIR_PERM) -p $(DEST)
+	install -m $(LIB_PERM) -p $(TARGET) $(DEST)
