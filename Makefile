@@ -1,6 +1,9 @@
 PROTOC_C ?= protoc-c
 PKG_CONFIG ?= pkg-config
 
+DIR_PERM = 0755
+LIB_PERM = 0755
+
 # Note: Use "-C .git" to avoid ascending to parent dirs if .git not present
 GIT_REVISION_ID = $(shell git -C .git rev-parse --short HEAD 2>/dev/null)
 PLUGIN_VERSION ?= $(shell cat VERSION)~git$(GIT_REVISION_ID)
@@ -44,3 +47,6 @@ clean:
 gdb:
 	gdb --args pidgin -c ~/.fake_purple -n -m
 
+install: $(TARGET)
+  mkdir -m $(DIR_PERM) -p $(DEST)
+  install -m $(LIB_PERM) -p $(TARGET) $(DEST)
