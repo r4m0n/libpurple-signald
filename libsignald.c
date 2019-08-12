@@ -126,11 +126,27 @@ signald_handle_input(SignaldAccount *sa, const char * json)
                 // purple_conv_chat_write(to, username, msg, PURPLE_MESSAGE_SYSTEM | PURPLE_MESSAGE_NO_LOG, time(NULL));
                 purple_debug_error("signald", "Received reciept.\n");
             } else {
+                gchar *tmpmsg = NULL;
                 const gchar *username = json_object_get_string_member(obj, "source");
                 const gchar *timestamp_str = json_object_get_string_member(obj, "timestampISO"); // TODO: create time_t from integer timestamp as timestampISO probably means "time of delivery" instead of the time the message was sent
                 // NOTE: time_t is an integer timestamp, but which timezone?
                 obj = json_object_get_object_member(obj, "dataMessage");
                 const gchar *message = json_object_get_string_member(obj, "message");
+                if (json_object_has_member(obj, "attachments")) {
+                    JsonArray *atts = json_object_get_array_member(obj, "attachments");
+                    const gchar *url = purple_account_get_string(sa->account, "att-url", "http://localhost/signal/");
+                    tmpmsg = g_strdup(message);
+
+                    for (guint i = 0; i < json_array_get_length(atts); i++) {
+                        JsonObject *att = json_array_get_object_element(atts, i);
+                        const gint64 id = json_object_get_int_member(att, "id");
+                        gchar *newmsg = g_strdup_printf("%s %s%li", tmpmsg, url, id);
+                        g_free(tmpmsg);
+                        tmpmsg = newmsg;
+                    }
+
+                    message = tmpmsg;
+                }
                 obj = json_object_get_object_member(obj, "groupInfo");
                 const gchar *groupid_str = NULL;
                 const gchar *groupname = NULL;
@@ -139,6 +155,9 @@ signald_handle_input(SignaldAccount *sa, const char * json)
                     groupname = json_object_get_string_member(obj, "name");
                 }
                 signald_process_message(sa, username, message, timestamp_str, groupid_str, groupname);
+                if (tmpmsg) {
+                    g_free(tmpmsg);
+                }
             }
         } else {
             purple_debug_error("signald", "Ignored message of unknown type.\n");
@@ -360,6 +379,13 @@ signald_add_account_options(GList *account_options)
                 _("Display all contacts as online"),
                 "fake-online",
                 TRUE
+                );
+    account_options = g_list_append(account_options, option);
+
+    option = purple_account_option_string_new(
+                _("Attackments base URL"),
+                "att-url",
+                "http://localhost/signal/"
                 );
     account_options = g_list_append(account_options, option);
 
